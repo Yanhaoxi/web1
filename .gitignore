@@ -1,3 +1,4 @@
-*.csv
 Stage1_1/
 Stage1_2/
+__pycache__/
+.mypy_cache/

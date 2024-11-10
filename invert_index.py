@@ -1,12 +1,37 @@
 from heapq import heappush, heappop, heapify
 from collections import UserList
+# 测试模块
+import time
+from functools import wraps
+
+# 全局字典，用于存储每个函数的累计执行时间
+execution_times = {}#type:ignore
+
+def timing_decorator(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        
+        # 更新全局字典中的累计执行时间
+        if func.__name__ in execution_times:
+            execution_times[func.__name__] += elapsed_time
+        else:
+            execution_times[func.__name__] = elapsed_time
+        
+        return result
+    return wrapper
+
 
 class OrderedInvertedIndex(UserList):
     def __init__(self, data=[]):
         super().__init__(data)  # 确保数据有序
 
+    @timing_decorator
     @staticmethod
-    def and_op(one: list[int], other: list[int]) -> 'OrderedInvertedIndex':
+    def and_op(one: 'OrderedInvertedIndex', other: 'OrderedInvertedIndex') -> 'OrderedInvertedIndex':
         # (and one other)，两个排序列表 small -> large
         result = []
         i, j = 0, 0
@@ -25,7 +50,7 @@ class OrderedInvertedIndex(UserList):
         return OrderedInvertedIndex(result)
     
     @staticmethod
-    def sub_op(one: list[int], other: list[int]) -> 'OrderedInvertedIndex':
+    def sub_op(one: 'OrderedInvertedIndex', other: 'OrderedInvertedIndex') -> 'OrderedInvertedIndex':
         # one-other 仅被and_not_op调用(此时one>other)
         result = []
         i, j = 0, 0
@@ -43,10 +68,11 @@ class OrderedInvertedIndex(UserList):
         return OrderedInvertedIndex(result)
 
     @staticmethod
-    def and_not_op(one: list[int], other: list[int]) -> 'OrderedInvertedIndex':
+    def and_not_op(one: 'OrderedInvertedIndex', other: 'OrderedInvertedIndex') -> 'OrderedInvertedIndex':
         # (and one (not other)) one-other
         return OrderedInvertedIndex.sub_op(one,OrderedInvertedIndex.quick_and(one, other))
 
+    @timing_decorator
     @staticmethod
     def quick_and(one, other):
         # (and one other)，两个排序列表 small -> large
@@ -93,12 +119,14 @@ class OrderedInvertedIndex(UserList):
                             j=j+j_jump
                             j_jump *= 2  # 快速增长跳跃步长
                         high = j + j_jump
+                        j_jump = half_jump(j_jump) #惩罚跳跃步长
                     except IndexError:#跳出了one的范围
                         if other[-1]==one[i]:
                             result.append(other[-1])
                             break
+                        j_jump = 1#惩罚跳跃步长
                         high = len(other) - 1
-                    i = OrderedInvertedIndex.binary_search(other, one[i], j, high)
+                    j = OrderedInvertedIndex.binary_search(other, one[i], j, high)
 
         except IndexError:
             pass
@@ -116,7 +144,7 @@ class OrderedInvertedIndex(UserList):
         return low if low < len(arr) and arr[low] >= target else low + 1
  
     @staticmethod
-    def or_op(*lists: list[int]) -> 'OrderedInvertedIndex':
+    def or_op(*lists: 'OrderedInvertedIndex') -> 'OrderedInvertedIndex':
         #  ndlogd
         # 使用最小堆合并多个有序列表
         min_heap:list[tuple[int,int]] = []
@@ -142,3 +170,4 @@ class OrderedInvertedIndex(UserList):
                 heappush(min_heap, (next_item, idx))
 
         return OrderedInvertedIndex(result)
+    

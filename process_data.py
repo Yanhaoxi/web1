@@ -3,7 +3,6 @@
 import csv
 csv_file_path = 'selected_book_top_1200_data_tag.csv'
 
-
 def read_csv(file_path: str, num_lines=1) -> list[tuple[int, list[str]]]:
     """ 
     ID1,"{'a1', 'b1'}"
@@ -109,6 +108,54 @@ def process_text(text: str) -> str:
     text = converter.convert(text)
     return text
 
+all_pos=jieba_pos_tags = {
+    # 名词（n）
+    "n", "nr", "nr1", "nr2", "nrj", "nrf", "ns", "nsf", "nt", "nz", "nl", "ng",
+    # 时间词（t）
+    "t", "tg",
+    # 处所词（s）
+    "s",
+    # 方位词（f）
+    "f",
+    # 动词（v）
+    "v", "vd", "vn", "vshi", "vyou", "vf", "vx", "vi", "vl", "vg",
+    # 形容词（a）
+    "a", "ad", "an", "ag", "al",
+    # 区别词（b）
+    "b",
+    # 状态词（z）
+    "z",
+    # 代词（r）
+    "r", "rr", "rz", "rzt", "rzs", "rzv", "ry", "ryt", "rys", "ryv", "rg",
+    # 数词（m）
+    "m", "mq",
+    # 量词（q）
+    "q",
+    # 副词（d）
+    "d",
+    # 介词（p）
+    "p", "pba", "pbei",
+    # 连词（c）
+    "c",
+    # 助词（u）
+    "u", "uzhe", "ule", "uguo", "ude1", "ude2", "ude3", "usuo", "udeng", "uyy", 
+    "udh", "uls", "uzhi", "ulian",
+    # 叹词（e）
+    "e",
+    # 语气词（y）
+    "y",
+    # 拟声词（o）
+    "o",
+    # 前缀（h）
+    "h",
+    # 后缀（k）
+    "k",
+    # 字符串（x）
+    "x", "xx",
+    # 标点符号（w）
+    "wkz", "wky", "wyz", "wyy", "wj", "ww", "wt", "wd", "wf", "wn", "wm", "ws", "wp"
+}
+
 # 单字允许的词性
 allowed_pos = {
     'a','ag','an','g','i','j','n','ng','nr','ns','nt','nz','s','tg','t','v','vd','vg','vn','un'
@@ -131,15 +178,59 @@ allowed_pos = {
 #         print( synonyms[token]+'->'+token)
 #     return synonyms.get(token, token)
 
+# 数据压缩
+
+import struct
+id_file_path = 'id_list.bin'
+dict_file_path = 'token2id_map.bin'
+def compress2f(file_path: str, index_file_path: str, map: dict[tuple[str, str], list[int]]) -> None:
+    with open(file_path, 'wb') as f:
+        # Create a new dictionary to store the file offsets and lengths
+        index_data = bytearray()
+        for key, value in map.items():
+            # Compress the list of integers using variable-length encoding
+            compressed_data = bytearray()
+            # 8位 最高位指示是否还有下一个字节 如果是1则还有下一个字节
+            for number in value:
+                while number >= 0x80:
+                    compressed_data.append((number & 0x7F) | 0x80)
+                    number >>= 7
+                compressed_data.append(number & 0x7F)
+            
+            offset = f.tell()
+            f.write(compressed_data)
+            length = len(compressed_data)
+            
+            # Convert the key to a string and encode it to bytes
+            key=(key[0].replace(':', ''),key[1])
+            key_str = f"{key[0]}:{key[1]}"
+            key_bytes = key_str.encode('utf-8')
+            key_length = len(key_bytes)
+            
+            # Pack the key length, key bytes, offset, and length into the index data
+            index_data.extend(struct.pack('B', key_length))
+            index_data.extend(key_bytes)
+            index_data.extend(struct.pack('Q', offset))
+            index_data.extend(struct.pack('I', length))
+    
+    # Save the index data to a binary file
+    with open(index_file_path, 'wb') as index_file:
+        index_file.write(index_data)
+    
+
+
 
 # 数据处理
 # ->tuple[list[tuple[int, list[tuple[str, str]]]], dict[int, int]]
 def process_tags(data: list[tuple[int, list[str]]], model: TokenModel):
     id_map = {}
+    token_idlist_map:dict[tuple[str,str],list[int]] = {}
     for i, (movie_id, tags) in enumerate(data):
         # id压缩
+        j=0
         if movie_id not in id_map:
-            id_map[movie_id] = i
+            id_map[movie_id] = j
+            j=j+1
         # 分词
         tokens:list[tuple[str,str]] = [token for tag in tags for token in tokenize_tags(tag, model)]
         # 去除非中文字符，英文进行翻译后保留
@@ -154,13 +245,22 @@ def process_tags(data: list[tuple[int, list[str]]], model: TokenModel):
         # tokens = [(replace_synonyms(token[0], synonyms), token[1]) for token in tokens]
         # # 去重
         # tokens = list(set(tokens))
-
-
-
-        data[i] = (movie_id, tokens) 
+        # 生成token_idlist_map
+        for token in tokens:
+            if token not in token_idlist_map:
+                token_idlist_map[token] = []
+            token_idlist_map[token].append(i)
+        data[i] = (movie_id, tokens) #type: ignore
+        if(i%100==0):
+            print(f'已完成：{i}')
+    print(f'开始压缩')
+    # import pickle
+    # with open('data.pkl', 'wb') as f:
+    #     pickle.dump(data, f)
+    compress2f(id_file_path,dict_file_path,token_idlist_map)
     return data, id_map
 
 
-# test
-data=read_csv(csv_file_path, 1)
-process_tags(data, jiebaModel())
+if __name__ == '__main__':
+    data = read_csv(csv_file_path, 1200)
+    process_tags(data, jiebaModel())
