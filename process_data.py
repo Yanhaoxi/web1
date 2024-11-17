@@ -217,8 +217,22 @@ def compress2f(file_path: str, index_file_path: str, map: dict[tuple[str, str], 
     with open(index_file_path, 'wb') as index_file:
         index_file.write(index_data)
     
-
-
+def token2tags(tags:list[str],model:TokenModel) -> list[tuple[str]]:
+        # 分词
+        tokens:list[tuple[str,str]] = [token for tag in tags for token in tokenize_tags(tag, model)]
+        # 去除非中文字符，英文进行翻译后保留
+        tokens = [(processed_token,_) for token, _ in tokens if (processed_token := process_text(token))]
+        # 相同词合并
+        tokens = list(set(tokens))
+        # 过滤停用词
+        tokens = [token for token in tokens if not is_stopword(token[0], stopwords)]
+        # 单字过滤
+        tokens = [token[0] for token in tokens if len(token[0])>1 or token[1] in allowed_pos]
+        # # 同义词合并
+        # tokens = [(replace_synonyms(token[0], synonyms), token[1]) for token in tokens]
+        # # 去重
+        # tokens = list(set(tokens))
+        return tokens
 
 # 数据处理
 # ->tuple[list[tuple[int, list[tuple[str, str]]]], dict[int, int]]
